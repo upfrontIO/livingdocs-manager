@@ -40,6 +40,41 @@ exports.start = (options, callback) ->
       log.verbose('design:proxy', "Serving '#{req.method} #{req.url}', requested by #{req.ip}")
       next()
 
+    # serve development designs
+    if options.devDirectory
+      build = require('../build')
+      serveJSON = (name, version) ->
+        (req, res) ->
+          callbacked = 0
+          design = build(src: options.devDirectory)
+          design.on 'error', (err) ->
+            log.error('error', err)
+            res.error(err) if !callbacked++
+
+          design.on 'end', ->
+            log.info('design:proxy', "Serve development design #{name}@#{version}")
+            res.set('content-type', 'application/json')
+            res.send(design.toJson()) if !callbacked++
+
+      serveAsset = (name, version) ->
+        (req, res) ->
+          filePath = path.join(options.devDirectory, req.params.file)
+          stream = fs.createReadStream(filePath)
+          contentType = mime.lookup(filePath)
+          sendFile(res)(null, {stream, contentType})
+
+      try
+        designPath = path.join(options.devDirectory, 'config')
+        {version, name} = require(designPath)
+      catch err
+        log.error('design:proxy', "Failed to load development design in '#{designPath}.'")
+
+      log.info('design:proxy', "Found local design #{name}@#{version}")
+      app.get("/designs/#{name}/#{version}", serveJSON(name, version))
+      app.get("/designs/#{name}/#{version}/:file(*)", serveAsset(name, version))
+
+
+    # serve proxied designs
     app.get '/designs/:name/:version', (req, res) ->
       name = req.params.name
       version = req.params.version
@@ -58,6 +93,7 @@ exports.start = (options, callback) ->
           sendFile(res)()
 
         else
+          log.info('design:proxy', "Serve cached design #{name}@#{version}")
           stream = stream.pipe(new DesignTransform({name, version, basePath}))
           sendFile(res)(null, {stream, contentType})
 

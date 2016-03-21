@@ -2,8 +2,6 @@ log = require('npmlog')
 path = require('path')
 _ = require('lodash')
 pkg = require('../package.json')
-Design = require('../')
-api = require('../lib/api')
 minimist = require('minimist')
 print = require('../lib/print')
 config = require('./config')
@@ -13,6 +11,7 @@ execAction = ({identifier, method, message}) ->
   ->
     authenticateProject (err, {options, token} = {}) ->
       return log.error("project:design:#{identifier}", err) if err
+      api = require('../lib/api')
       api.project[method]
         host: options.host
         token: token
@@ -101,6 +100,7 @@ commands =
       args.destination = args._[1] || process.cwd()
 
       error = null
+      Design = require('../')
       Design.build(src: args.source, dest: args.destination)
       .on 'debug', (debug) ->
         log.verbose('build', debug)
@@ -152,24 +152,29 @@ commands =
             log.info('design:publish', 'Published the design %s@%s to %s', design.name, design.version, url)
 
 
+  'design:server': -> commands['design:proxy']
   'design:proxy':
-    description: 'Start a design server that caches designs'
+    description: 'Start a design server that caches designs for offline use'
     exec: ->
       args = minimist process.argv.slice(3),
         string: ['host', 'port']
         alias: h: 'host', p: 'port'
 
-      args.host ?= 'http://api.livingdocs.io'
-      args.port ?= 3000
+      opts =
+        host: args.host || 'https://api.livingdocs.io'
+        port: args.port || 3000
+        directory: path.join(process.cwd(), args._[0] || '.') if args._[0]
 
+      log.info('design:proxy', 'Proxying %s', opts.host)
       proxy = require('../lib/design/proxy')
       proxy.start
-        host: args.host
-        port: args.port
+        host: opts.host
+        port: opts.port
         cacheDirectory: path.join(config.cache, 'design-proxy')
+        devDirectory: opts.directory
       , (err, {server, port} = {}) ->
         if err?.code == 'EADDRINUSE'
-          log.error('design:proxy', 'Failed to start the server on port %s', args.port)
+          log.error('design:proxy', 'Failed to start the server on port %s', opts.port)
 
         else if err
           log.error('design:proxy', err)
@@ -187,6 +192,7 @@ commands =
     exec: ->
       authenticateProject (err, {options, token} = {}) ->
         return log.error('project:design:list', err) if err
+        api = require('../lib/api')
         api.project.listDesigns
           host: options.host
           token: token
@@ -251,6 +257,7 @@ authenticate = (callback) ->
       u: 'user'
       p: 'password'
 
+  api = require('../lib/api')
   api.askAuthenticationOptions defaults, (options) ->
     api.authenticate
       host: options.host

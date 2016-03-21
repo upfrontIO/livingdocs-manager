@@ -27,29 +27,22 @@ module.exports = (options) ->
   # Add design configuration file (with global settings)
   configFilePath = path.join(options.src, 'config.json')
   design.initConfigFile configFilePath, (err) ->
-    if err
-      design.emit('error', err)
-      design.emit('end')
+    return design.error(err) if err
 
-    else
-      templatesPath = path.join(options.src, options.templatesDirectory)
-      new Glob '**/*.html', cwd: templatesPath, (err, files) ->
-        if err
-          design.emit('error', err)
+    templatesPath = path.join(options.src, options.templatesDirectory)
+    new Glob '**/*.html', cwd: templatesPath, (err, files) ->
+      return design.error(err) if err
+
+      if files?.length
+        async.each files, (filepath, done) ->
+          design.addTemplateFile(path.join(templatesPath, filepath), done)
+        , (err) =>
+          return design.error(err) if err
           design.emit('end')
+          # design.save(options.dest + '/design.js', options.minify)
 
-        else if files?.length
-          async.each files, (filepath, done) ->
-            design.addTemplateFile(path.join(templatesPath, filepath), done)
-          , (err) =>
-            if err
-              design.emit('error', err)
-              design.emit('end')
-            else
-              design.save(options.dest + '/design.js', options.minify)
-
-        else
-          design.emit('warn', "The design '#{options.design}' has no templates")
-          design.emit('end')
+      else
+        design.emit('warn', "The design '#{options.design}' has no templates")
+        design.emit('end')
 
   design
